@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"log"
-	"strings"
 )
 
 type Configuration struct {
@@ -14,23 +13,40 @@ type Configuration struct {
 
 func main() {
 	file, err := os.Open("config.json")
+	configuration := Configuration{Port: "7654"}
 
-	if err != nil {
-		log.Fatal("Could not open config: ", err)
-		return
+	if err == nil {
+		decoder := json.NewDecoder(file)
+		err = decoder.Decode(&configuration)
+
+		if err != nil {
+			log.Fatal("Could not decode config: ", err)
+			return
+		}
 	}
 
-	decoder := json.NewDecoder(file)
-	configuration := Configuration{}
-	err = decoder.Decode(&configuration)
+	p := ":" + configuration.Port
 
-	if err != nil {
-		log.Fatal("Could not decode config: ", err)
-		return
+	log.Printf("Listening on port %s.", configuration.Port)
+	log.Printf("Open http://localhost%s/ in your browser.", p)
+
+	log.Fatal(http.ListenAndServe(p, handleFileServer("./")))
+}
+
+func handleFileServer(dir string) http.HandlerFunc {
+	realHandler := http.FileServer(http.Dir(dir)).ServeHTTP
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := os.Stat("." + r.URL.Path); os.IsNotExist(err) {
+			log.Println("File not found:", r.URL.Path)
+			notFound(w, r)
+			return
+		}
+		realHandler(w, r)
 	}
+}
 
-	var port = []string{":", configuration.Port};
-	fs := http.FileServer(http.Dir("./"))
-	http.Handle("/", fs)
-	log.Fatal(http.ListenAndServe(strings.Join(port, ""), nil))
+
+func notFound(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/#!"+string(r.URL.Path), http.StatusSeeOther)
 }
