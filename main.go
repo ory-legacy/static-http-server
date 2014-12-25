@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"log"
+	"path/filepath"
+	"regexp"
 )
 
 type Configuration struct {
@@ -12,7 +14,7 @@ type Configuration struct {
 }
 
 func main() {
-	file, err := os.Open("config.json")
+	file, err := os.Open("server.json")
 	configuration := Configuration{Port: "7654"}
 
 	if err == nil {
@@ -25,22 +27,34 @@ func main() {
 		}
 	}
 
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	p := ":" + configuration.Port
 
 	log.Printf("Listening on port %s.", configuration.Port)
 	log.Printf("Open http://localhost%s/ in your browser.", p)
+	log.Printf("Current working directory: %s", dir)
 
-	log.Fatal(http.ListenAndServe(p, handleFileServer("./")))
+	os.Chdir(dir)
+
+	log.Fatal(http.ListenAndServe(p, handleFileServer(dir)))
 }
 
 func handleFileServer(dir string) http.HandlerFunc {
 	realHandler := http.FileServer(http.Dir(dir)).ServeHTTP
 
+	fileRegexp := regexp.MustCompile(`^(.+)\.(.+)$`)
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, err := os.Stat("." + r.URL.Path); os.IsNotExist(err) {
+		if _, err := os.Stat(dir + r.URL.Path); os.IsNotExist(err) {
 			log.Println("File not found:", r.URL.Path)
-			notFound(w, r)
-			return
+			if !fileRegexp.MatchString(r.URL.Path) {
+				notFound(w, r)
+				return
+			}
 		}
 		realHandler(w, r)
 	}
